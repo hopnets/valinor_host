@@ -55,7 +55,7 @@ Continue with installing DPDK libs:
 Clone the Valinor repository:
 
     cd ~
-    git clone https://github.com/erfan111/valinor-host-public
+    git clone https://github.com/hopnets/valinor_host
 
 On the receiver machine, switch to the client app:
 
