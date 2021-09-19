@@ -7,7 +7,7 @@
 #include "util/log.h"
 #include "inc/crc.h"
 
-#define IA_NS 20000
+#define IA_NS 10000000
 #define RESPONSE_SIZE 10000
 
 typedef struct {
@@ -15,8 +15,6 @@ typedef struct {
     char udp_buffer[4096];
     uint64_t latency[100000000];
     uint64_t latency_ptr;
-    uint64_t first_sent;
-    uint64_t last_sent;
     uint8_t sent;
 } app_data_t;
 
@@ -27,9 +25,7 @@ struct app_header {
 
 static app_data_t app_data;
 struct udp_flow_id udp_f;
-uint64_t first_sent;
 uint64_t last_sent;
-uint64_t next_send;
 char TX_BUF[10000];
 
 
@@ -140,9 +136,8 @@ int app_initiate_callback(struct app_context *app)
         TX_BUF[i] = (rand() % 26) + 'A';
 
     log_info("Initializing the application context.");
-    str_to_ip(APP_IP, &addr);
-    na.ip = addr;
-    na.port = PORT;
+    na.ip = app->app_ip;
+    na.port = app->app_port;
     ret = tcp_listen(na, BACKLOG, &q);
     if (ret){
         log_error("Failed to listen to TCP netaddr.");
@@ -172,7 +167,7 @@ int app_initiate_callback(struct app_context *app)
     udp_f.destination.port = 11211;
     udp_f.source.port = 11212;
     app_data.sent = 0;
-    app_data.last_sent = rte_rdtsc();
+    last_sent = rte_rdtsc();
     return 0;
 }
 
@@ -189,7 +184,7 @@ int app_udp_server_callback(struct app_context *app)
     char * tx_data;
     unsigned int size =  app_data.app->flow_size[index];
     tsc = rte_rdtsc();
-    diff = tsc - app_data.last_sent;
+    diff = tsc - last_sent;
     denom = diff * NS_PER_S;
     diff = denom  / rte_get_tsc_hz();
     // if(app_data.sent > 10)
@@ -201,7 +196,7 @@ int app_udp_server_callback(struct app_context *app)
     {
         memset(tx_data+(8*i), rand_crc32c(56), 8);
     }
-    app_data.last_sent = tsc;
+    last_sent = tsc;
     tsc = rte_cpu_to_be_64(tsc);
     memcpy(tx_data, &tsc, 8);
     memset(tx_data + 8, 0, 8);
@@ -214,6 +209,51 @@ int app_udp_server_callback(struct app_context *app)
 }
 
 int app_tcp_server_callback(struct app_context *app)
+{
+    int ret, rem;
+    unsigned int size;
+    tcpconn_t *conn;
+    u_int64_t index;
+    char rcv_buf[10000];
+    char * token, *tx_data;
+    ret = tcp_accept(app->q, &conn);
+    if(ret)
+    {
+        log_info("App received new connection");
+        list_add(&app->conns, &conn->app_link);
+    }
+    list_for_each(&app->conns, conn, app_link){
+        ret = tcp_read(conn, rcv_buf, 2048);
+        // log_info("received %u bytes", ret);
+        if(ret< 0)
+        {
+            log_warn("Conn closed.");
+            list_del_from(&app->conns, &conn->app_link);
+        }
+        if(ret > 0)
+        {
+            if(rcv_buf[ret-1] == '\n')
+            {
+                // printf( "%s (%d)\n", token, strlen(token) ); //printing each token
+                // log_debug("Received data for connection(%d):\n%s", ret, buf);
+                // hexDump("TCP payload dump", rcv_buf, ret);
+                index = rte_rand() % 100;
+                size = 1400;
+                rcv_buf[size-1] = '\n';
+                ret = tcp_write(conn, rcv_buf, size);
+                if(ret < size)
+                {
+                    log_warn("failed to write %u bytes of data", RESPONSE_SIZE - ret);
+                }
+            }
+
+        }
+    }
+    return 0;
+
+}
+
+int app_tcp_client_callback(struct app_context *app)
 {
     int ret, rem;
     tcpconn_t *conn;
@@ -234,110 +274,25 @@ int app_tcp_server_callback(struct app_context *app)
         }
         if(ret > 0)
         {
-            log_info("received %d bytes from server...", ret);
-            // rem = ret;
-            // token = strtok(rcv_buf, "\n");
-            // rem -= strlen(token);
-            // // loop through the string to extract all other tokens
-            // while( token != NULL && rem > 0) {
-            //     // printf( "%s (%d)\n", token, strlen(token) ); //printing each token
-            //     // log_debug("Received data for connection(%d):\n%s", ret, buf);
-            //     memcpy(TX_BUF, token, strlen(token)-1);
-            //     TX_BUF[RESPONSE_SIZE-1] = '\n';
-            //     ret = tcp_write(conn, TX_BUF, RESPONSE_SIZE);
-            //     if(ret < RESPONSE_SIZE)
-            //     {
-            //         log_warn("failed to write %u bytes of data", RESPONSE_SIZE - ret);
-            //     }
-            //     rem -= strlen(token);
-            //     token = strtok(NULL, "\n");
-            // }
-
-        }
-    }
-    return 0;
-
-}
-
-int app_tcp_client_data_received(struct app_context *app)
-{
-    int ret, rem;
-    char rcv_buf[2048000];
-    char * token;
-    struct app_header *ahdr;
-    uint64_t now, diff, denom;
-    do{
-        ret = tcp_read(app->server_conn, rcv_buf, 2048000);
-        if(ret< 0)
-        {   
-            log_warn("server connection closed");
-            return -1;
-        }
-        if(ret > 0)
-        {
-            if(rcv_buf[ret-1] == '\n')
-            {
-                ahdr = (struct app_header *) rcv_buf;
-                if(ahdr->tx_ts == 0)
-                    return 0;
-                // hexDump("TCP payload dump", rcv_buf, ret);
-                now = rte_rdtsc();
-                diff = now - rte_be_to_cpu_64(ahdr->tx_ts);
-                denom = diff * NS_PER_S;
-                // log_info("diff = %lu, denom= %lu", diff, denom);
-                diff = denom  / rte_get_tsc_hz();
-                app_data.latency[app_data.latency_ptr++] = diff;
-                // log_info("tsc = %lu, %lx - %lx", diff, now, rte_be_to_cpu_64(ahdr->tx_ts));
+            rem = ret;
+            token = strtok(rcv_buf, "\n");
+            rem -= strlen(token);
+            // loop through the string to extract all other tokens
+            while( token != NULL && rem > 0) {
+                // printf( "%s (%d)\n", token, strlen(token) ); //printing each token
+                // log_debug("Received data for connection(%d):\n%s", ret, buf);
+                memcpy(TX_BUF, token, strlen(token)-1);
+                TX_BUF[RESPONSE_SIZE-1] = '\n';
+                ret = tcp_write(conn, TX_BUF, RESPONSE_SIZE);
+                if(ret < RESPONSE_SIZE)
+                {
+                    log_warn("failed to write %u bytes of data", RESPONSE_SIZE - ret);
+                }
+                rem -= strlen(token);
+                token = strtok(NULL, "\n");
             }
-            // else{
-            //     log_warn("fix the protocol");
-            // }
-
-            // rem = ret;
-            // token = strtok(rcv_buf, "\n");
-            // rem -= strlen(token);
-            // // loop through the string to extract all other tokens
-            // while( token != NULL && rem > 0) {
-            //     // printf( "%s (%d)\n", token, strlen(token) ); //printing each token
-            //     // log_debug("Received data for connection(%d):\n%s", ret, buf);
-            //     memcpy(TX_BUF, token, strlen(token)-1);
-            //     TX_BUF[RESPONSE_SIZE-1] = '\n';
-            //     ret = tcp_write(conn, TX_BUF, RESPONSE_SIZE);
-            //     if(ret < RESPONSE_SIZE)
-            //     {
-            //         log_warn("failed to write %u bytes of data", RESPONSE_SIZE - ret);
-            //     }
-            //     rem -= strlen(token);
-            //     token = strtok(NULL, "\n");
-            // }
 
         }
-    }
-    while(ret > 0);
-    return 0;
-}
-
-int app_tcp_client_callback(struct app_context *app)
-{
-    int ret, i;
-    char tx_data[200];
-    uint64_t ts, now = rte_rdtsc();
-    if(now - app_data.last_sent >= next_send)
-    {
-        ts = rte_cpu_to_be_64(now);
-        memcpy(tx_data, &ts, 8);
-        tx_data[199] = '\n';
-        ret = tcp_write(app->server_conn, tx_data, 200);
-        if(ret < 200)
-        {
-            // log_warn("failed to write %u bytes of data", 200 - ret);
-            return 0;
-        }
-        app_data.last_sent = now;
-        // next_send = (rte_rand() % 100000) * rte_get_tsc_hz();
-        next_send = IA_NS * rte_get_tsc_hz();
-        next_send /= NS_PER_S;
-        // log_info("next send=%lu", next_send);
     }
     return 0;
 
@@ -360,8 +315,6 @@ int app_tcp_client_init(struct app_context *app)
         return ret;
     }
     log_info("Successfully dialled TCP connection");
-    app->server_conn = conn;
-    app_data.first_sent = rte_rdtsc();
     return 0;
 
 }
@@ -369,8 +322,7 @@ int app_tcp_client_init(struct app_context *app)
 
 int app_logic_callback(struct app_context *app)
 {
-    return app_tcp_client_data_received(app);
-    // return app_tcp_server_callback(app);
+    return app_tcp_server_callback(app);
 }
 
 
@@ -393,52 +345,18 @@ int app_periodic_callback(struct app_context *app)
     return 0;
 }
 
-int cmpfunc (const void * a, const void * b) {
-   return ( *(uint64_t*)a - *(uint64_t*)b );
-}
-
 
 int app_terminate_callback(struct app_context *app)
 {
     int i, ret;
     FILE *f;
-    uint64_t denom, duration, sum = 0;
+    uint64_t sum = 0;
     for(i=0; i < app_data.latency_ptr;i++)
         sum += app_data.latency[i];
     log_info("Calculating average latency from %lu records ...", app_data.latency_ptr);
     if(app_data.latency_ptr == 0)
         app_data.latency_ptr = 1;
-    if(app_data.latency_ptr < 100)
-    {
-        log_info("Too few latency samples to calculate the percentile.");
-        log_info("Average latency: %lu ns", sum/app_data.latency_ptr);
-    }
-    else
-    {
-        qsort(app_data.latency, app_data.latency_ptr, 8, cmpfunc);
-        log_info("#type\tavg\tstd\tmin\t5th\t50th\t90th\t95th\t99th\t99.9th\t99.99th");
-        log_info("All\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t", 
-        sum/app_data.latency_ptr, 
-        0,
-        app_data.latency[0],
-        app_data.latency[(app_data.latency_ptr/100)*5],
-        app_data.latency[(app_data.latency_ptr/100)*50],
-        app_data.latency[(app_data.latency_ptr/100)*90],
-        app_data.latency[(app_data.latency_ptr/100)*95],
-        app_data.latency[(app_data.latency_ptr/100)*99],
-        app_data.latency[(uint64_t)((app_data.latency_ptr/100)*99.9)],
-        app_data.latency[(uint64_t)((app_data.latency_ptr/100)*99.99)]);
-    }
-    duration = app_data.last_sent - app_data.first_sent;
-    denom = duration * US_PER_S;
-    duration = denom  / rte_get_tsc_hz();
-    if(duration < US_PER_S)
-        log_info("Cannot calculate QPS, experiment duration under 1s (%lu), %lu responses received (%lu)", duration, app_data.latency_ptr);
-    else{
-        // duration /= NS_PER_S;
-        log_info("Total QPS = %lu (%lu / %lu s)", (app_data.latency_ptr*US_PER_S)/duration, app_data.latency_ptr, duration/US_PER_S);
-    }
-
+    log_info("Average latency: %lu ns", sum/app_data.latency_ptr);
     f = fopen("pings.csv", "w");
     if(f == NULL)
     {
