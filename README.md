@@ -21,6 +21,7 @@ Download Mellanox OFED drivers on both servers:
     sudo /etc/init.d/openibd restart
 
 reply `y` to the prompt to install the required dependencies and Mellanox OFED.
+
 Note1: Skip this step if you are using an Intel NIC.
 
 Install DPDK on both servers:
@@ -56,6 +57,7 @@ Clone the Valinor repository:
 
     cd ~
     git clone https://github.com/hopnets/valinor_host
+    cd valinor_host
 
 On the receiver machine, switch to the client app:
 
@@ -63,7 +65,6 @@ On the receiver machine, switch to the client app:
 
 On both servers run:
 
-    cd valinor
     make
 
 Finally, you should enable root SSH access from the sender machine to the receiver. To do that, first run `ssh-keygen` command on the sender machine. Then copy the contents of `~/.ssh/id_rsa.pub` on the sender machine to `/root/.ssh/authorized_keys` on the receiver machine. Run `ssh root@<RECEIVER_PUBLIC_IP>` to make sure you have proper SSH access before continuing.
