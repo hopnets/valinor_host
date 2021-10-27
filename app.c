@@ -149,7 +149,7 @@ int app_initiate_callback(struct app_context *app)
     app_data.app = app;
     app_data.latency_ptr = 0;
 
-    f = fopen("/users/erfanshz/valinor/workloads/cache_size.csv", "r");
+    f = fopen("./workloads/cache_size.csv", "r");
     if(f == NULL)
     {
         log_error("Failed to open cache size distribution file, %d", errno);
