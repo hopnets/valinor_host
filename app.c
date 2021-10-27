@@ -148,7 +148,7 @@ int app_initiate_callback(struct app_context *app)
 
     app_data.app = app;
     app_data.latency_ptr = 0;
-
+    /*
     f = fopen("./workloads/cache_size.csv", "r");
     if(f == NULL)
     {
@@ -162,12 +162,14 @@ int app_initiate_callback(struct app_context *app)
         log_trace("%f -> %d (ret)", size, (int) size);
         app_data.app->flow_size[i] = (int) size;
     }
+    */
     str_to_ip("10.10.1.3", &udp_f.destination.ip);
     str_to_ip("10.10.1.2", &udp_f.source.ip);
     udp_f.destination.port = 11211;
     udp_f.source.port = 11212;
     app_data.sent = 0;
     last_sent = rte_rdtsc();
+    log_info("App initialized successfully");
     return 0;
 }
 
