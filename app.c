@@ -442,12 +442,32 @@ int app_terminate_callback(struct app_context *app)
     f = fopen("pings.csv", "w");
     if(f == NULL)
     {
-        log_error("Failed to pings output file, %d", errno);
+        log_error("Failed to write pings output file, %d", errno);
         return -1;
     }
     for(i=0; i < app_data.latency_ptr;i++)
         fprintf(f, "%lu\n", app_data.latency[i]);
     fclose(f);
+
+    f = fopen("summary.csv", "w");
+    if(f == NULL)
+    {
+	    log_error("Failed to write summary file, %d", errno);
+	    return -1;
+    }
+    fprintf(f, "All\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t%lu\t",
+        sum/app_data.latency_ptr,
+        0,
+        app_data.latency[0],
+        app_data.latency[(app_data.latency_ptr/100)*5],
+        app_data.latency[(app_data.latency_ptr/100)*50],
+        app_data.latency[(app_data.latency_ptr/100)*90],
+        app_data.latency[(app_data.latency_ptr/100)*95],
+        app_data.latency[(app_data.latency_ptr/100)*99],
+        app_data.latency[(uint64_t)((app_data.latency_ptr/100)*99.9)],
+        app_data.latency[(uint64_t)((app_data.latency_ptr/100)*99.99)]);
+    fclose(f);
+
 
     return 0;
 }

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-PEER=root@hp043.utah.cloudlab.us
-PEER_VALINOR_HOME=/users/erfanshz/valinor
-LOCAL_INTERFACE_ID=3
-PEER_INTERFACE_ID=3
+PEER=root@<RECEIVER_PUBLIC_IP>
+PEER_VALINOR_HOME=<PATH_TO_VALINOR_HOME_ON_RECEIVER>
+LOCAL_INTERFACE_ID=<DPDK_INTERFACE_BITMASK_ON_SENDER>
+PEER_INTERFACE_ID=<DPDK_INTERFACE_BITMASK_ON_RECEIVER>
 
 rm -rf pings.csv no_valinor.csv valinor.csv summary.csv
 sed -i '/#define FLOWINFO_MARKING_CTL 1/c\#define FLOWINFO_MARKING_CTL 0' inc/valinor.h
@@ -13,7 +13,7 @@ ssh $PEER "sed -i '/#define FLOWINFO_MARKING_CTL 1/c\#define FLOWINFO_MARKING_CT
 ssh $PEER "sed -i '/#define FLOWINFO_ORDERING_CTL 1/c\#define FLOWINFO_ORDERING_CTL 0' ${PEER_VALINOR_HOME}/inc/valinor.h"
 ssh $PEER "pushd ${PEER_VALINOR_HOME} && make clean && make"
 make clean && make
-ssh $PEER 'killall mburst_marker'
+ssh $PEER 'killall valinor'
 ssh $PEER "nohup ${PEER_VALINOR_HOME}/build/valinor -- -p ${PEER_INTERFACE_ID} -c ${PEER_VALINOR_HOME}/server.json > foo.out 2> foo.err < /dev/null &"
 sudo timeout -s INT 15 ./build/valinor -- -p $LOCAL_INTERFACE_ID -c client.json 
 mv summary.csv no_valinor.csv
@@ -36,7 +36,7 @@ echo ""
 echo "Network with Valinor:"
 cat valinor.csv
 echo ""
-ssh $PEER 'killall mburst_marker'
+ssh $PEER 'killall valinor'
 echo "Experiment Finished!"
 
 
