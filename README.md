@@ -5,13 +5,18 @@ To deploy and test host components, you need to bind your NIC to userspace drive
 We used `ubuntu 18.04` featuring two `Intel Xeon E5-2640 v4 @ 2.40GHz` CPUs and two `Mellanox CX-4` network cards. 
 We designate two server machines to serve as traffic sender and traffic receiver. In our Cloudlab setup, the first NIC is set up for external (SSH) communications and the second interface is used for benchmarking.
 
+--------
+Setup
+--------
+
 To set up the userspace drivers, on both servers, run:
 
     sudo apt update && sudo apt upgrade
     sudo apt install ninja-build python3-pip libnuma-dev
     pip3 install meson
 
-Download Mellanox OFED drivers on both servers:
+Download Mellanox OFED drivers on both servers: (Note1: Skip this step if you are using an Intel NIC.
+)
 
     cd ~
     wget https://www.mellanox.com/downloads/ofed/MLNX_OFED-5.4-1.0.3.0/MLNX_OFED_LINUX-5.4-1.0.3.0-ubuntu18.04-x86_64.tgz
@@ -21,8 +26,6 @@ Download Mellanox OFED drivers on both servers:
     sudo /etc/init.d/openibd restart
 
 reply `y` to the prompt to install the required dependencies and Mellanox OFED.
-
-Note1: Skip this step if you are using an Intel NIC.
 
 Install DPDK on both servers:
 
@@ -69,16 +72,24 @@ On both servers run:
 
 Finally, you should enable root SSH access from the sender machine to the receiver. To do that, first run `ssh-keygen` command on the sender machine. Then copy the contents of `~/.ssh/id_rsa.pub` on the sender machine to `/root/.ssh/authorized_keys` on the receiver machine. Run `ssh root@<RECEIVER_PUBLIC_IP>` to make sure you have proper SSH access before continuing.
 
+--------
+Configuration
+--------
+
 On the sender machine, open `run.sh` script.
 You must modify four variables on the top to match you environment:
 
     PEER=root@<RECEIVER_PUBLIC_IP>
     PEER_VALINOR_HOME=<PATH_TO_VALINOR_HOME_ON_RECEIVER>
-    LOCAL_INTERFACE_ID=<DPDK_INTERFACE_ID_ON_SENDER>
-    PEER_INTERFACE_ID=<DPDK_INTERFACE_ID_ON_RECEIVER>
+    LOCAL_INTERFACE_ID=<DPDK_INTERFACE_BITMASK_ON_SENDER>
+    PEER_INTERFACE_ID=<DPDK_INTERFACE_BITMASK_ON_RECEIVER>
     
+DPDK_INTERFACE_BITMASK specifies the index of the NIC used for DPDK. For example, if in the output of `ifconfig` the target interface is the third row, you must specify 4 as the bitmask. If the target interface is the second row, you must specify 2.
+   
 On sender machine, open `client.json`. You must update the three MAC addresses provided in the JSON file to match your testbed.
-On the receiver machine, open `server.json`. Repeat the above procedure to have a correct ARP table.
+On the receiver machine, open `server.json`. Repeat the above procedure to have a correct ARP table. You can find the MAC addresses suing `ifconfig` or `ip link` commands.
+
+Finally, you must also update the `OUT_PORT` located in `inc/valinor.h` for both servers. This number must match the row id of the target interfaces in the `ifconfig` output. The is index starts from 0, therefore if the target interface is the first interface in the output of th `ifconfig` command, you should set `OUT_PORT` to 0.
 
 Run the script on the sender machine to perform the latency experiment:
 
