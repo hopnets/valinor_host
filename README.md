@@ -1,6 +1,6 @@
-# Valinor host component implementation
-## Targetting CoNEXT '21 Artifact Evaluation
+# Vertigo host component implementation
 
+Vertigo's host component executables are called "Valinor".
 To deploy and test host components, you need to bind your NIC to userspace drivers.
 We used `ubuntu 18.04` featuring two `Intel Xeon E5-2640 v4 @ 2.40GHz` CPUs and two `Mellanox CX-4` network cards. 
 We designate two server machines to serve as traffic sender and traffic receiver. In our Cloudlab setup, the first NIC is set up for external (SSH) communications and the second interface is used for benchmarking.
